@@ -263,25 +263,68 @@ export async function enhancePromptWithGemini(originalPrompt: string, stylePrese
     // add options like temperature/generation params if supported/desired
   };
 
-  const url = `https://generativelanguage.googleapis.com/v1/models/${encodeURIComponent(
-    GOOGLE_MODEL_TEXT
-  )}:generateText`;
+  // const url = `https://generativelanguage.googleapis.com/v1/models/${encodeURIComponent(
+  //   GOOGLE_MODEL_TEXT
+  // )}:generateText`;
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${GOOGLE_API_KEY}`,
-    },
-    body: JSON.stringify(body),
-  });
+  // const res = await fetch(url, {
+  //   method: "POST",
+  //   headers: {
+  //     "Content-Type": "application/json",
+  //     Authorization: `Bearer ${GOOGLE_API_KEY}`,
+  //   },
+  //   body: JSON.stringify(body),
+  // });
 
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`Gemini text enhancement failed: ${res.status} ${txt}`);
-  }
+  // if (!res.ok) {
+  //   const txt = await res.text();
+  //   throw new Error(`Gemini text enhancement failed: ${res.status} ${txt}`);
+  // }
 
-  const json = await res.json();
+  // const json = await res.json();
+
+  // ---------- REPLACEMENT CODE START ----------
+/**
+ * Build endpoint URL and headers correctly for:
+ *  - API key usage: pass ?key=API_KEY and DO NOT set Authorization header
+ *  - OAuth token usage: pass Authorization: Bearer <token>
+ */
+const baseUrl = `https://generativelanguage.googleapis.com/v1/models/${encodeURIComponent(
+  GOOGLE_MODEL_TEXT
+)}:generateText`;
+
+// If the GOOGLE_API_KEY looks like an API key (not an OAuth2 Bearer token) then
+// append ?key=...; otherwise send Authorization header.
+// Heuristic: OAuth2 tokens often start with "ya29." (Google OAuth access tokens),
+// while API keys are short alphanumeric strings. We use a simple safe heuristic.
+const isOAuthBearer = typeof GOOGLE_API_KEY === "string" && GOOGLE_API_KEY.startsWith("ya29.");
+const url = isOAuthBearer || !GOOGLE_API_KEY ? baseUrl : `${baseUrl}?key=${encodeURIComponent(GOOGLE_API_KEY)}`;
+
+const headers: Record<string,string> = {
+  "Content-Type": "application/json",
+};
+
+// If we are using an OAuth Bearer token, send Authorization header
+if (isOAuthBearer) {
+  headers["Authorization"] = `Bearer ${GOOGLE_API_KEY}`;
+}
+
+// Now call the API
+const res = await fetch(url, {
+  method: "POST",
+  headers,
+  body: JSON.stringify(body),
+});
+
+if (!res.ok) {
+  const txt = await res.text();
+  // include response text in the thrown error (useful for debugging)
+  throw new Error(`Gemini text enhancement failed: ${res.status} ${txt}`);
+}
+
+const json = await res.json();
+// ... (rest of parsing logic)
+
 
   // Robust parsing - different API versions use different keys; try common possibilities:
   const candidate =
