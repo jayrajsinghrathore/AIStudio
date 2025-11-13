@@ -15,10 +15,6 @@
     {
       "key": "SUPABASE_SERVICE_ROLE_KEY",
       "description": "Supabase service role key"
-    },
-    {
-      "key": "OPENAI_API_KEY",
-      "description": "OpenAI API key for Gemini integration"
     }
   ]
 }
