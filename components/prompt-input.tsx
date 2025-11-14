@@ -14,8 +14,9 @@ interface PromptInputProps {
 }
 
 export function PromptInput({ onEnhance, onGenerate, isLoading }: PromptInputProps) {
-  const [prompt, setPrompt] = useState("Luxurious lipstick advertisement with golden packaging and rose petals")
-  const [enhancedPrompt, setEnhancedPrompt] = useState("")
+  const [prompt, setPrompt] = useState(
+    "Luxurious lipstick advertisement with golden packaging and rose petals"
+  )
   const [isEnhancing, setIsEnhancing] = useState(false)
   const [stylePreset, setStylePreset] = useState("photorealistic")
   const { toast } = useToast()
@@ -38,21 +39,26 @@ export function PromptInput({ onEnhance, onGenerate, isLoading }: PromptInputPro
         body: JSON.stringify({ prompt, stylePreset }),
       })
 
-      if (!response.ok) {
-        throw new Error("Failed to enhance prompt")
-      }
+      if (!response.ok) throw new Error("Failed to enhance prompt")
 
       const data = await response.json()
-      setEnhancedPrompt(data.enhancedPrompt)
-      onEnhance(data.enhancedPrompt)
-      toast({
-        title: "Success",
-        description: "Prompt enhanced with AI",
-      })
+
+      if (data.enhancedPrompt) {
+        // OVERWRITE textarea value with enhanced prompt
+        setPrompt(data.enhancedPrompt)
+
+        // pass to parent (StudioPage)
+        onEnhance(data.enhancedPrompt)
+
+        toast({
+          title: "Enhanced!",
+          description: "Your prompt has been upgraded.",
+        })
+      }
     } catch (error) {
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to enhance prompt",
+        description: error instanceof Error ? error.message : "Failed to enhance",
         variant: "destructive",
       })
     } finally {
@@ -61,8 +67,7 @@ export function PromptInput({ onEnhance, onGenerate, isLoading }: PromptInputPro
   }
 
   const handleGenerate = () => {
-    const promptToUse = enhancedPrompt || prompt
-    if (!promptToUse.trim()) {
+    if (!prompt.trim()) {
       toast({
         title: "Error",
         description: "Please enter or enhance a prompt first",
@@ -70,13 +75,13 @@ export function PromptInput({ onEnhance, onGenerate, isLoading }: PromptInputPro
       })
       return
     }
-
-    onGenerate(promptToUse, stylePreset)
+    onGenerate(prompt, stylePreset)
   }
 
   return (
     <div className="space-y-6 p-6 rounded-2xl bg-gradient-to-br from-white to-rose-50 border border-rose-100 shadow-lg">
-      {/* Original Prompt */}
+
+      {/* Single Prompt Box (Enhanced text directly appears here) */}
       <div className="space-y-3">
         <label className="block text-sm font-semibold text-gray-900">Your Prompt</label>
         <Textarea
@@ -91,17 +96,6 @@ export function PromptInput({ onEnhance, onGenerate, isLoading }: PromptInputPro
       {/* Style Presets */}
       <StylePresets selectedPreset={stylePreset} onSelectPreset={setStylePreset} />
 
-      {/* Enhanced Prompt Display */}
-      {enhancedPrompt && (
-        <div className="space-y-2">
-          <label className="block text-sm font-semibold text-gray-900">Enhanced Prompt</label>
-          <div className="relative rounded-xl bg-gradient-to-br from-rose-100 to-pink-100 p-4 text-sm text-gray-900 border border-rose-200">
-            <Sparkles className="absolute top-3 right-3 w-4 h-4 text-rose-600" />
-            <p className="pr-8">{enhancedPrompt}</p>
-          </div>
-        </div>
-      )}
-
       {/* Action Buttons */}
       <div className="flex gap-3 pt-2">
         <Button
@@ -113,6 +107,7 @@ export function PromptInput({ onEnhance, onGenerate, isLoading }: PromptInputPro
           <Wand2 className="w-4 h-4 mr-2" />
           {isEnhancing ? "Enhancing..." : "Enhance"}
         </Button>
+
         <Button
           onClick={handleGenerate}
           disabled={isLoading || isEnhancing || !prompt.trim()}
@@ -125,3 +120,4 @@ export function PromptInput({ onEnhance, onGenerate, isLoading }: PromptInputPro
     </div>
   )
 }
+

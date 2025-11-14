@@ -10,7 +10,7 @@ const _geistMono = Geist_Mono({ subsets: ["latin"] })
 export const metadata: Metadata = {
   title: "Creative Studio — Beauty Ad Generator",
   description: "Generate stunning beauty product ads using AI. Enhance prompts and create images with advanced AI.",
-  generator: "v0.app",
+  generator: "Next.js",
 }
 
 export default function RootLayout({

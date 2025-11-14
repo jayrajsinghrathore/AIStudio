@@ -104,24 +104,160 @@
  *   -H "Content-Type: application/json" \
  *   -d '{"prompt":"rose quartz serum bottle","stylePreset":"Photorealistic"}'
  */
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+// app/api/enhance/route.ts
+// import { NextRequest, NextResponse } from "next/server";
+// import { enhancePromptWithGemini } from "../../../lib/google-api";
+
+// export async function POST(req: NextRequest) {
+//   try {
+//     const body = await req.json();
+//     const { prompt, stylePreset } = body ?? {};
+
+//     if (!prompt || typeof prompt !== "string" || prompt.trim().length === 0) {
+//       return NextResponse.json({ error: "prompt is required" }, { status: 400 });
+//     }
+
+//     const enhanced = await enhancePromptWithGemini(prompt, stylePreset);
+//     return NextResponse.json({ enhancedPrompt: enhanced }, { status: 200 });
+//   } catch (err: any) {
+//     console.error("Enhance error:", err);
+//     const msg = err?.message || "Enhancement failed";
+//     return NextResponse.json({ error: msg }, { status: 500 });
+//   }
+// }
+
+
+
+
 // app/api/enhance/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { enhancePromptWithGemini } from "../../../lib/google-api";
 
+/**
+ * Server-side enhance endpoint
+ * - Expects { prompt: string, stylePreset?: string } in body
+ * - Uses enhancePromptWithGemini(...) (server-only)
+ * - Returns { enhancedPrompt } on success
+ * - Returns friendly messages for transient errors (503) and client errors (400)
+ */
+
+const TIMEOUT_MS = 25000; // max wait for Gemini enhancement (tune as needed)
+const RETRY_AFTER_SECONDS = 3; // suggested Retry-After for transient errors (tune as needed)
+
+function isTransientErrorMessage(msg: string) {
+  if (!msg) return false;
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes("unavailable") ||
+    lower.includes("overloaded") ||
+    lower.includes("503") ||
+    lower.includes("service unavailable") ||
+    lower.includes("too many requests") || // 429
+    lower.includes("rate limit")
+  );
+}
+
+function isClientErrorMessage(msg: string) {
+  if (!msg) return false;
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes("invalid argument") ||
+    lower.includes("please use a valid role") ||
+    lower.includes("invalid") ||
+    lower.includes("400")
+  );
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => null);
     const { prompt, stylePreset } = body ?? {};
 
     if (!prompt || typeof prompt !== "string" || prompt.trim().length === 0) {
       return NextResponse.json({ error: "prompt is required" }, { status: 400 });
     }
 
-    const enhanced = await enhancePromptWithGemini(prompt, stylePreset);
+    // Run enhancePromptWithGemini but with a timeout guard
+    const enhancementPromise = enhancePromptWithGemini(prompt, stylePreset);
+
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("enhancement_timeout")), TIMEOUT_MS)
+    );
+
+    let enhanced: string;
+    try {
+      enhanced = await Promise.race([enhancementPromise, timeoutPromise]);
+    } catch (err: any) {
+      const msg = String(err?.message ?? err);
+
+      // Timeout
+      if (msg === "enhancement_timeout") {
+        console.error("[Enhance] Timeout after", TIMEOUT_MS, "ms for prompt:", prompt.slice(0, 200));
+        return new NextResponse(
+          JSON.stringify({ error: "Service timed out. Please try again." }),
+          {
+            status: 503,
+            headers: {
+              "Content-Type": "application/json",
+              "Retry-After": String(RETRY_AFTER_SECONDS),
+            },
+          }
+        );
+      }
+
+      // If the underlying error is transient (model overloaded / rate limit), return 503
+      if (isTransientErrorMessage(msg)) {
+        console.warn("[Enhance] Transient error from Gemini:", msg);
+        return new NextResponse(
+          JSON.stringify({
+            error: "Service temporarily busy. Please try again shortly.",
+          }),
+          {
+            status: 503,
+            headers: {
+              "Content-Type": "application/json",
+              "Retry-After": String(RETRY_AFTER_SECONDS),
+            },
+          }
+        );
+      }
+
+      // If it's a client-side error (bad payload), return 400 with the original message
+      if (isClientErrorMessage(msg)) {
+        console.warn("[Enhance] Client error from Gemini / validation:", msg);
+        return NextResponse.json({ error: msg }, { status: 400 });
+      }
+
+      // Otherwise rethrow to outer catch to centralize logging
+      throw err;
+    }
+
+    // Success: return enhanced prompt
     return NextResponse.json({ enhancedPrompt: enhanced }, { status: 200 });
   } catch (err: any) {
-    console.error("Enhance error:", err);
-    const msg = err?.message || "Enhancement failed";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    // Centralized error handling & server-side logging
+    const raw = String(err?.message ?? err);
+    console.error("[Enhance] Unexpected server error:", raw);
+
+    // If the message looks transient, map to 503 (safety)
+    if (isTransientErrorMessage(raw)) {
+      return new NextResponse(
+        JSON.stringify({ error: "Service temporarily busy. Please try again shortly." }),
+        {
+          status: 503,
+          headers: {
+            "Content-Type": "application/json",
+            "Retry-After": String(RETRY_AFTER_SECONDS),
+          },
+        }
+      );
+    }
+
+    // Default: 500 internal server error
+    return NextResponse.json({ error: "Enhancement failed. See server logs for details." }, { status: 500 });
   }
 }
