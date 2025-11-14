@@ -790,24 +790,28 @@ function sleep(ms: number) {
  * Lightweight fetch with retries for transient errors.
  * Retries on status 429, 500, 502, 503.
  */
-async function fetchWithRetries(url: string, options: RequestInit, attempts = 3, baseDelay = 300) {
+// Shorter, gentler retry policy: fewer attempts and shorter base backoff.
+// Still respects Retry-After when provided by the server.
+async function fetchWithRetries(url: string, options: RequestInit, attempts = 2, baseDelay = 150) {
   let lastErr: any = null;
   for (let i = 1; i <= attempts; i++) {
     try {
       const res = await fetch(url, options);
       if (res.ok) return res;
 
-      // transient statuses -> retry
+      // transient statuses -> retry (but keep retries minimal)
       if ([429, 500, 502, 503].includes(res.status)) {
         const ra = res.headers.get("retry-after");
         const msg = await res.text().catch(() => "");
-        // Respect Retry-After when present
+        // If server gives an explicit Retry-After, respect it (but cap it)
         if (ra && !Number.isNaN(Number(ra))) {
-          const waitMs = Number(ra) * 1000;
-          console.warn(`[google-api] transient status ${res.status}, waiting ${waitMs}ms (retry ${i}/${attempts})`);
+          // cap to 10s to avoid extremely long blocking inside a single request
+          const waitMs = Math.min(Number(ra) * 1000, 10000);
+          console.warn(`[google-api] transient status ${res.status}, respecting Retry-After ${waitMs}ms (retry ${i}/${attempts})`);
           await sleep(waitMs);
         } else {
-          const delay = Math.pow(2, i - 1) * baseDelay + Math.floor(Math.random() * 200);
+          // much smaller exponential backoff with small jitter
+          const delay = Math.min(Math.pow(2, i - 1) * baseDelay + Math.floor(Math.random() * 150), 5000);
           console.warn(`[google-api] transient status ${res.status}, backing off ${delay}ms (retry ${i}/${attempts})`);
           await sleep(delay);
         }
@@ -819,16 +823,17 @@ async function fetchWithRetries(url: string, options: RequestInit, attempts = 3,
       const txt = await res.text().catch(() => "");
       throw new Error(`Non-retryable HTTP ${res.status}: ${txt}`);
     } catch (err: any) {
-      // network error or thrown above - retry if attempts left
       lastErr = err;
       if (i === attempts) break;
-      const delay = Math.pow(2, i - 1) * baseDelay + Math.floor(Math.random() * 200);
+      // smaller retry delay for network errors
+      const delay = Math.min(Math.pow(2, i - 1) * baseDelay + Math.floor(Math.random() * 150), 5000);
       console.warn(`[google-api] fetch error, retrying in ${delay}ms (attempt ${i}/${attempts})`, err?.message ?? err);
       await sleep(delay);
     }
   }
   throw lastErr ?? new Error("fetchWithRetries exhausted");
 }
+
 
 /**
  * Robust extractor for text from various Google response shapes.
@@ -933,8 +938,8 @@ export async function enhancePromptWithGemini(originalPrompt: string, stylePrese
       headers,
       body: JSON.stringify(payload),
     },
-    4,
-    350
+    2,
+    150
   );
 
   // if still not ok (should be handled by fetchWithRetries) - defensive
@@ -1004,7 +1009,7 @@ export async function generateImageWithGemini({
       method: "POST",
       headers,
       body: JSON.stringify(imagePayload),
-    }, 3, 400);
+    }, 2, 200);
 
     if (!r.ok) {
       const txt = await r.text().catch(() => "");
