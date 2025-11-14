@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { createBrowserClient } from "@supabase/ssr"
 
+
 export default function SignupPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -20,10 +21,13 @@ export default function SignupPage() {
   const router = useRouter()
   const { toast } = useToast()
 
+
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL || "",
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
   )
+  
+  
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -37,45 +41,33 @@ export default function SignupPage() {
     setIsLoading(true)
 
     try {
-      if (!email || !password) {
-        throw new Error("Please fill in all fields")
-      }
+      if (!email || !password) throw new Error("Please fill in all fields")
+      if (password.length < 6) throw new Error("Password must be at least 6 characters")
 
-      if (password.length < 6) {
-        throw new Error("Password must be at least 6 characters long")
-      }
-
+      // --- SIGN UP WITHOUT EMAIL CONFIRMATION ---
       const { data, error: authError } = await supabase.auth.signUp({
         email,
         password,
-        options: {
-          emailRedirectTo:
-            process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || `${window.location.origin}/auth/callback`,
-        },
       })
 
-      if (authError) {
-        throw new Error(authError.message)
-      }
+      if (authError) throw new Error(authError.message)
 
-      if (!data.user) {
-        throw new Error("Signup failed. Please try again.")
+      // If email confirmations are disabled in Supabase dashboard,
+      // user gets logged in instantly.
+      if (!data.session) {
+        throw new Error("Signup succeeded but auto-login failed. Check Supabase email settings.")
       }
 
       toast({
-        title: "Success",
-        description: "Please check your email to confirm your account",
+        title: "Account created!",
+        description: "Welcome to Creative Studio 💄✨",
       })
 
-      router.push("/auth/signup-success")
+      router.push("/studio")
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "An error occurred during signup"
-      setError(errorMessage)
-      toast({
-        title: "Error",
-        description: errorMessage,
-        variant: "destructive",
-      })
+      const msg = error instanceof Error ? error.message : "Signup error"
+      setError(msg)
+      toast({ title: "Error", description: msg, variant: "destructive" })
     } finally {
       setIsLoading(false)
     }
@@ -89,67 +81,61 @@ export default function SignupPage() {
             <CardTitle className="text-2xl text-rose-900">Create Your Studio</CardTitle>
             <CardDescription>Join Creative Studio to start generating beauty ads</CardDescription>
           </CardHeader>
+
           <CardContent>
             <form onSubmit={handleSignup} className="flex flex-col gap-6">
+              {/* Email */}
               <div className="grid gap-2">
-                <Label htmlFor="email" className="text-rose-900">
-                  Email
-                </Label>
+                <Label htmlFor="email" className="text-rose-900">Email</Label>
                 <Input
                   id="email"
                   type="email"
-                  placeholder="you@example.com"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   disabled={isLoading}
-                  className="border-rose-200 focus:border-rose-400 focus:ring-rose-400"
                 />
               </div>
+
+              {/* Password */}
               <div className="grid gap-2">
-                <Label htmlFor="password" className="text-rose-900">
-                  Password
-                </Label>
+                <Label htmlFor="password" className="text-rose-900">Password</Label>
                 <Input
                   id="password"
                   type="password"
-                  placeholder="••••••••"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={isLoading}
-                  className="border-rose-200 focus:border-rose-400 focus:ring-rose-400"
                 />
               </div>
+
+              {/* Confirm Password */}
               <div className="grid gap-2">
-                <Label htmlFor="confirm-password" className="text-rose-900">
-                  Confirm Password
-                </Label>
+                <Label htmlFor="confirm-password" className="text-rose-900">Confirm Password</Label>
                 <Input
                   id="confirm-password"
                   type="password"
-                  placeholder="••••••••"
                   required
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   disabled={isLoading}
-                  className="border-rose-200 focus:border-rose-400 focus:ring-rose-400"
                 />
               </div>
-              {error && <p className="text-sm text-red-500 font-medium">{error}</p>}
+
+              {error && <p className="text-sm text-red-500">{error}</p>}
+
               <Button
                 type="submit"
                 className="w-full bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white"
                 disabled={isLoading}
               >
-                {isLoading ? "Creating account..." : "Create account"}
+                {isLoading ? "Creating..." : "Create Account"}
               </Button>
+
               <div className="text-center text-sm text-gray-600">
                 Already have an account?{" "}
-                <Link
-                  href="/auth/login"
-                  className="text-rose-600 font-semibold hover:text-rose-700 underline underline-offset-4"
-                >
+                <Link href="/auth/login" className="text-rose-600 font-semibold underline">
                   Sign in
                 </Link>
               </div>
@@ -160,3 +146,4 @@ export default function SignupPage() {
     </div>
   )
 }
+
